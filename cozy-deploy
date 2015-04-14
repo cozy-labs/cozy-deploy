@@ -1,0 +1,352 @@
+#!/bin/bash
+
+# Stop the script at any command returning status > 0
+set -e
+
+# Debug mode (uncomment to activate)
+#set -x
+
+# Color messages if run in a TTY
+if [ -t 1 ]; then
+    cyan='\e[0;36m'
+    green='\e[0;32m'
+    red='\e[0;31m'
+    white='\e[0m'
+else
+    cyan='\e[0m'
+    green='\e[0m'
+    red='\e[0m'
+    white='\e[0m'
+fi
+
+# Ensure that the script is running as superuser
+if [ "$(id -u)" != "0" ]; then
+   echo -e "${red}This script must be run as root${white}" 1>&2
+   exit 1
+fi
+
+# Check that the domain name is valid
+# TODO: support new TLDs ?
+if [ ! -z "$2" ]; then
+    COZY=$2
+    if [[ ! $COZY =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$ ]]; then
+        echo -e "${red}You must provide a valid domain name (e.g. $(basename $0) $1 mycozy.org)${white}" 1>&2
+        exit 1
+    fi
+
+    set +e && docker ps -a | grep -q $COZY
+    if [ $? -eq 0 ]; then
+        COZY_EXISTS=true
+    else
+        COZY_EXISTS=false
+    fi
+    set -e
+fi
+
+INVALID_COZY_MSG="${red}You must provide a Cozy domain name (e.g. $(basename $0) $1 mycozy.org)${white}"
+
+case "$1" in
+  pull)
+    docker pull cozy/full
+    ;;
+
+
+  build)
+    echo -e "${cyan}Building image from the official repository: https://github.com/cozy-labs/cozy-docker${white}"
+    docker build -t cozy/full github.com/cozy-labs/cozy-docker
+    ;;
+
+
+  init)
+    mkdir -p /etc/cozy-deploy/{ssl,vhosts}
+    mkdir -p /var/cozy-deploy/{databases,configurations,backups,apps}
+    chmod -R 600 /var/cozy-deploy/configurations
+    chmod -R 600 /var/cozy-deploy/configurations
+    echo "49001" > /etc/cozy-deploy/last-port-used
+    echo "include /etc/cozy-deploy/vhosts/*;" > /etc/nginx/conf.d/cozy-deploy.conf
+    openssl dhparam -out /etc/cozy-deploy/ssl/dh2048.pem -outform PEM -2 2048
+    service nginx restart
+    ;;
+
+
+  update-image)
+    echo -e "${cyan}Updating cozy base image: cozy/full${white}"
+    docker pull cozy/full
+    echo -e "${cyan}Updating cozy-deploy executable${white}"
+    wget -qO- https://raw.github.com/cozy-labs/cozy-deploy/master/cozy-deploy > $(readlink -f $0)
+    ;;
+
+
+  update)
+    if [ -z "$COZY" ]; then
+        echo -e "$INVALID_COZY_MSG" 1>&2
+        exit 1
+    fi
+
+    echo -e "${cyan}Updating system and applications on $COZY${white}"
+    docker exec $COZY cozy-monitor update-cozy-stack
+    docker exec $COZY cozy-monitor update-all
+    ;;
+
+
+  update-all)
+    echo -e "${cyan}Updating applications on all the Cozies...${white}"
+    sleep 3
+    for CID in $(cozy-deploy list-domains)
+    do
+        docker exec $CID cozy-monitor update-cozy-stack
+        docker exec $CID cozy-monitor update-all
+    done
+    ;;
+
+
+  upgrade)
+    if [ -z "$COZY" ]; then
+        echo -e "$INVALID_COZY_MSG" 1>&2
+        exit 1
+    fi
+
+    echo -e "${cyan}Upgrading system on $COZY${white}"
+    docker exec $COZY apt-get update --quiet
+    docker exec $COZY apt-get upgrade --quiet -yy
+    ;;
+
+
+  upgrade-all)
+    echo -e "${cyan}Upgrading the Cozies' systems${white}"
+    sleep 3
+    for CID in $(cozy-deploy list-domains)
+    do
+        docker exec $CID apt-get update --quiet
+        docker exec $CID apt-get upgrade --quiet -yy
+    done
+    ;;
+
+
+  deploy)
+    if [ -z "$COZY" ]; then
+        echo -e "$INVALID_COZY_MSG" 1>&2
+        exit 1
+    fi
+
+    # Find a new port
+    echo -e "${cyan} > Finding a free port${white}"
+    LAST_PORT=$(cat /etc/cozy-deploy/last-port-used)
+    PORT=$((LAST_PORT+1))
+    echo "$PORT" > /etc/cozy-deploy/last-port-used
+
+    # Generate an SSL certificate
+    echo -e "${cyan} > Generating the self-signed SSL certificate${white}"
+    openssl req -x509 -nodes -newkey rsa:2048 \
+                 -keyout /etc/cozy-deploy/ssl/$COZY.key \
+                 -out /etc/cozy-deploy/ssl/$COZY.crt \
+                 -days 365 \
+                 -subj "/CN=$COZY"
+    chmod 600 /etc/cozy-deploy/ssl/$COZY.key
+
+    # Write the VHost configuration
+    echo -e "${cyan} > Writing Nginx configuration${white}"
+    cat <<EOF > /etc/cozy-deploy/vhosts/$COZY
+server {
+    listen 443;
+    server_name $COZY;
+
+    ssl_certificate /etc/cozy-deploy/ssl/$COZY.crt;
+    ssl_certificate_key /etc/cozy-deploy/ssl/$COZY.key;
+    ssl_dhparam /etc/cozy-deploy/ssl/dh2048.pem;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+    ssl_ciphers ALL:!aNULL:!eNULL:!LOW:!EXP:!RC4:!3DES:+HIGH:+MEDIUM;
+    ssl_prefer_server_ciphers on;
+    ssl on;
+
+    gzip_vary on;
+    client_max_body_size 1024M;
+
+    add_header Strict-Transport-Security max-age=2678400;
+
+    location / {
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header Host \$http_host;
+        proxy_redirect http:// https://;
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    access_log /var/log/nginx/$COZY.log;
+}
+server {
+    listen 80;
+    server_name $COZY;
+    return 301 https://\$host\$request_uri;
+}
+EOF
+    # Reload Nginx (restart is not needed)
+    service nginx reload
+
+    # Fetch couchdb UID and create the shared volume
+    echo -e "${cyan} > Creating shared volumes${white}"
+    COUCHDB_ID=$(docker run cozy/full id -u couchdb)
+    mkdir -p /var/cozy-deploy/databases/$COZY
+    chown $COUCHDB_ID -hR /var/cozy-deploy/databases/$COZY
+
+    # Run the container
+    echo
+    echo -e "${cyan} > Running the container:${white}"
+    docker run -d \
+               -p $PORT:80 \
+               -e "DISABLE_SSL=true" \
+               -v /var/cozy-deploy/databases/$COZY:/var/lib/couchdb \
+               -v /var/cozy-deploy/configurations/$COZY:/etc/cozy \
+               -v /var/cozy-deploy/apps/$COZY:/usr/local/cozy \
+               --name $COZY \
+               cozy/full 2>&1
+
+    echo
+    echo -e "${green}Your new Cozy is now deployed."
+    echo -e "If your DNS is correctly set up, it will be accessible at https://$COZY in a few second.${white}"
+    echo
+    ;;
+
+
+  remove)
+    if [ -z "$COZY" ]; then
+        echo -e "$INVALID_COZY_MSG" 1>&2
+        exit 1
+    fi
+
+    read -p "${red}/!\ You are about to remove $COZY, its data and its configuration.${white} Are you sure? [N/y]" -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -f /etc/cozy-deploy/vhosts/$COZY
+        rm -f /etc/cozy-deploy/ssl/$COZY.{key,crt}
+        rm -rf /var/cozy-deploy/databases/$COZY
+        rm -rf /var/cozy-deploy/configurations/$COZY
+        rm -rf /var/cozy-deploy/apps/$COZY
+        docker kill $COZY || echo "No container to stop" 1>&2
+        docker rm $COZY || echo "No container to remove" 1>&2
+        echo -e "${green}$COZY successfully removed${white}"
+    fi
+    ;;
+
+
+  enter)
+    if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
+        echo -e "$INVALID_COZY_MSG" 1>&2
+        exit 1
+    fi
+
+    echo -e "${cyan}Opening a shell in $COZY...${white}"
+    sleep 1
+    docker exec -ti $COZY bash
+    ;;
+
+
+  status)
+    if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
+        echo -e "$INVALID_COZY_MSG" 1>&2
+        exit 1
+    fi
+
+    docker exec $COZY cozy-monitor status
+    ;;
+
+
+  logs)
+    if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
+        echo -e "$INVALID_COZY_MSG" 1>&2
+        exit 1
+    fi
+
+    docker exec $COZY bash -c "tail -n 30 /usr/local/var/log/cozy/*.log"
+    echo
+    docker exec $COZY bash -c "tail -n 30 /var/log/supervisor/*-stdout*.log"
+    ;;
+
+
+  list)
+    printf "%20s    %7s    %5s\n" "DOMAIN" "RUNNING" "PORT"
+    for NAME in $(cozy-deploy list-domains)
+    do
+        RUNNING=$(docker inspect --format '{{.State.Running}}' $NAME)
+        PORT=$(docker inspect --format '{{.HostConfig.PortBindings}}' $NAME \
+             | sed 's/^.*HostPort://' \
+             | sed 's/...$//' \
+             | sed 's/HostIp://')
+        if [ "$RUNNING" == "true" ]; then
+            printf "%20s    ${green}%7s${white}    %5s\n" "$NAME" "$RUNNING" "$PORT"
+        else
+            printf "%20s    ${red}%7s${white}    %5s\n" "$NAME" "$RUNNING" "$PORT"
+        fi
+    done
+    ;;
+
+
+  list-domains)
+    docker ps -a -q \
+              --filter "image=cozy/*" \
+              --filter "name=.*\..*" \
+    | xargs docker inspect --format '{{.Name}}' \
+    | sed 's/^.//' \
+    || echo ""
+    ;;
+
+
+  start-all)
+    echo -e "${cyan}Starting all the Cozies${white}"
+    docker ps -a \
+              --filter "image=cozy/*" \
+              --filter "name=.*\..*" \
+              --filter "status=exited*" -q \
+    | xargs docker start \
+    || echo "No more Cozy to start" 1>&2
+    ;;
+
+
+  monitor)
+    if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
+        docker stats $(docker ps -q)
+    else
+        docker stats $COZY
+    fi
+    ;;
+
+
+  commands)
+    cozy-deploy help | awk '{print $1}' | grep -v ':' 
+    ;;
+
+
+  *)
+    echo
+    echo "Usage: cozy-deploy COMMAND [domain]"
+    echo ""
+    echo "Options:"
+
+    cat<<EOF
+    help                          Print the list of commands
+    init                          Initialize Nginx proxy configuration in /etc/nginx/conf.d/cozy-deploy.conf
+    pull                          Fetch the latest cozy/full official image from Docker Hub
+    build                         Build a cozy/full image manually from the GitHub repository https://github.com/cozy-labs/cozy-docker
+    update-image                  Update cozy-deploy and the base image
+
+    list                          List deployed Cozies
+    list-domains                  Only list domain names associated with actual Cozies
+    start-all                     Start all previously stopped Cozies
+    update-all                    Launch application updates on all the Cozies
+    upgrade-all                   Launch a system upgrade on all the Cozies
+    monitor                       Monitor resources used by the Cozies or by a specific Cozy
+
+    deploy  <domain>              Deploy a new Cozy container
+    remove  <domain>              Remove a Cozy, its data and its configuration
+    enter   <domain>              Open a shell in the specified Cozy
+    status  <domain>              Show the status of the Cozy's services
+    logs    <domain>              Display the last lines of interesting log files in the specified Cozy
+    update  <domain>              Launch application updates on a Cozy
+    upgrade <domain>              Launch a system upgrade on a Cozy
+EOF
+    ;;
+esac

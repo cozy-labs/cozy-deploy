@@ -1,0 +1,26 @@
+_cozy-deploy_complete()
+{
+  local cur prev
+
+  COMPREPLY=()
+  cur=${COMP_WORDS[COMP_CWORD]}
+  prev=${COMP_WORDS[COMP_CWORD-1]}
+
+  _list_commands=$(cozy-deploy commands)
+  _list_domains=$(cozy-deploy list-domains)
+
+  if [ $COMP_CWORD -eq 1 ]; then
+    COMPREPLY=( $(compgen -W "${_list_commands}" -- $cur) )
+  elif [ $COMP_CWORD -eq 2 ]; then
+    case "$prev" in
+      "remove"|"enter"|"status"|"logs"|"update"|"upgrade"|"monitor")
+        COMPREPLY=( $(compgen -W "${_list_domains}" -- $cur) )
+        ;;
+      *)
+        ;;
+    esac
+  fi
+
+  return 0
+} &&
+complete -F _cozy-deploy_complete cozy-deploy
