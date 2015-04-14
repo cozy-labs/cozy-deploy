@@ -5,7 +5,7 @@ Deploy, manage and monitor multiple Cozies. Docker powered.
 
 ## Requirements
 
-* An Ubuntu 14.04 host (only tested on `x64`)
+* A GNU/Linux system capable of running Docker 1.5+ (only tested on Ubuntu 14.04 x64 though)
 
 
 ## Installing
@@ -44,24 +44,15 @@ cozy-deploy build
 ```
 
 
-## Upgrading
-
-```bash
-cozy-deploy update-image
-```
-
-It will update the `cozy-deploy` script and pull the latest version of the Docker image.
-
-
 ## Usage
 
 Manage your Cozy by their domain name.
 
 ```bash
-cozy-deploy my.cozy.example.com
+cozy-deploy deploy my.cozy.example.com
 ```
 
-Once deployed, if you have **properly set your DNS**, this Cozy will be accessible at https://my.cozy.example.com
+Once deployed, if you have **properly set your DNS**, this Cozy will be accessible at https://my.cozy.example.com    
 It may take a while for your Cozy to fully initialize.
 
 From there, you can display logs, update, monitor or open a shell on this Cozy. Here is the full set of commands:
@@ -96,13 +87,14 @@ Options:
 ## PageKite
 
 Cozy Deploy provides a [PageKite](https://pagekite.net) seemless integration.    
-Subscribe to a PageKite account, [get your Kite Secret](https://pagekite.net/home/#show_account_details), and save your settings on your host:
+Subscribe to a PageKite account, [get your Kite Secret](https://pagekite.net/home/#show_account_details), and save your settings on your host by running:
 
 ```bash
 cozy-deploy pagekite-init
 ```
 
 Then you will be able to deploy containers accessible to the Internet without having to deal with DNS or port opening.    
+
 Just indicate a new PageKite domain (like `xxx-myaccount.pagekite.me`) and follow the instructions:
 
 ```bash
@@ -114,11 +106,14 @@ cozy-deploy deploy xxx-myaccount.pagekite.me
 
 ## SSL certificates
 
-Certificates are available in `/etc/cozy-deploy/ssl/`.    
-By default all the certificates are self-signed. Just change one of them and restart Nginx if you want to put your own certificate.
+SSL Certificates are located in `/etc/cozy-deploy/ssl/`.    
+
+By default all the certificates are self-signed, except on PageKite domains. Just change one of them and restart Nginx if you want to use your own certificate.
 
 
-## ZSH completion
+## Bash/ZSH completion
+
+The `bash_completion` file is automatically copied in `/etc/bash_completion.d/`. Nothing further to do on Bash.
 
 If you are on ZSH and you want to enjoy `cozy-deploy` command completion, add this to you `.zshrc`:
 ```
@@ -126,6 +121,15 @@ autoload bashcompinit
 bashcompinit
 source /etc/bash_completion.d/cozy-deploy
 ```
+
+
+## Upgrading
+
+```bash
+cozy-deploy update-image
+```
+
+It will update the `cozy-deploy` executable and pull the latest version of the Docker image.
 
 
 ## Hack
@@ -142,6 +146,9 @@ Cozies are running on high ports (>`49000`). Make sure that you close them and l
 
 * Backup/restore
 * Snapshot (via docker commit and tags)
+
+
+---
 
 
 ## What is Cozy?

@@ -42,7 +42,8 @@ apt-get install --quiet --yes --force-yes \
   python-software-properties \
   bash-completion \
   openssl \
-  wget
+  wget \
+  python
 add-apt-repository -y ppa:nginx/stable
 
 # Add Docker repository

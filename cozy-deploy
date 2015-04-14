@@ -267,6 +267,7 @@ EOF
         restart_pagekite
     fi
 
+    sleep 5
     echo
     echo -e "${green}Your new Cozy is now deployed."
     echo -e "If your DNS is properly set up, it will be accessible at https://$COZY in a few second.${white}"
