@@ -2,6 +2,7 @@
 
 Deploy, manage and monitor multiple Cozies. Docker powered.
 
+![gif](http://kload.fr/cozy-deploy.gif)
 
 ## Requirements
 
