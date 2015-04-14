@@ -6,6 +6,7 @@ set -e
 # Debug mode (uncomment to activate)
 #set -x
 
+
 # Color messages if run in a TTY
 if [ -t 1 ]; then
     cyan='\e[0;36m'
@@ -19,17 +20,18 @@ else
     white='\e[0m'
 fi
 
+
 # Ensure that the script is running as superuser
 if [ "$(id -u)" != "0" ]; then
    echo -e "${red}This script must be run as root${white}" 1>&2
    exit 1
 fi
 
+
 # Check that the domain name is valid
-# TODO: support new TLDs ?
 if [ ! -z "$2" ]; then
     COZY=$2
-    if [[ ! $COZY =~ ^[a-zA-Z0-9][a-zA-Z0-9-]{1,61}[a-zA-Z0-9]\.[a-zA-Z]{2,}$ ]]; then
+    if [[ ! $COZY =~ ^.*\.[a-zA-Z]{2,}$ ]]; then
         echo -e "${red}You must provide a valid domain name (e.g. $(basename $0) $1 mycozy.org)${white}" 1>&2
         exit 1
     fi
@@ -44,6 +46,25 @@ if [ ! -z "$2" ]; then
 fi
 
 INVALID_COZY_MSG="${red}You must provide a Cozy domain name (e.g. $(basename $0) $1 mycozy.org)${white}"
+
+
+# Check if pagekite is configured
+if [ -f ~/.pagekite.rc ]; then
+    PAGEKITE=true
+else
+    PAGEKITE=false
+fi
+
+# Helper to restart pagekite.py
+restart_pagekite () {
+    if [[ $PAGEKITE = "true" ]]; then
+        if [ "$(pgrep pagekite.py)" ]; then
+            killall pagekite.py
+        fi
+        pagekite.py --daemonize
+    fi
+}
+
 
 case "$1" in
   pull)
@@ -66,6 +87,39 @@ case "$1" in
     echo "include /etc/cozy-deploy/vhosts/*;" > /etc/nginx/conf.d/cozy-deploy.conf
     openssl dhparam -out /etc/cozy-deploy/ssl/dh2048.pem -outform PEM -2 2048
     service nginx restart
+    ;;
+
+
+  pagekite-init)
+    # Download PageKite executable
+    wget -qO- https://pagekite.net/pk/pagekite.py > /usr/local/bin/pagekite.py
+    chmod +x /usr/local/bin/pagekite.py
+
+    # Configure /root/.pagekite.rc
+    if [ "$PAGEKITE" == "true" ]; then
+        echo -e "${red}PageKite is already configured, delete ~/.pagekite.rc if you want to be able to configure it again${white}" 1>&2
+        exit 1
+    fi
+    echo -e "${cyan}You are about to configure PageKite, a service that enables you to open your Cozies to the Internet easily."
+    echo -e "You need to register on https://pagekite.net/signup/ first, then find your Kite Secret on https://pagekite.net/home/?#show_account_details."
+    echo
+    echo -e "Please indicate those details below.${white}"
+    echo
+    read -e -p "Your Kite (xxxx.pagekite.me): " ACCOUNT
+    read -e -p "Your Kite Secret (e.g. 89d49k4zck26x7b427k8x79a9bd3ex9a): " SECRET
+    cat <<EOF > /root/.pagekite.rc
+kitename   = $ACCOUNT
+kitesecret = $SECRET
+defaults
+savefile = /root/.pagekite.rc
+EOF
+
+    echo
+    echo -e "${green}Your PageKite account has been properly configured."
+    echo -e "Try deploying a Cozy on cozy-$ACCOUNT :-)"
+    echo
+    echo -e "Pro tip: xxx-$ACCOUNT will be deployed in HTTPS"
+    echo -e "         xxx.$ACCOUNT will be deployed in HTTP${white}"
     ;;
 
 
@@ -205,9 +259,17 @@ EOF
                --name $COZY \
                cozy/full 2>&1
 
+    # Add a PageKite Host
+    if [[ $COZY =~ ^.*\.pagekite\.me$ ]] && [[ $PAGEKITE = "true" ]]; then
+        pagekite.py --add $PORT $COZY
+        echo
+        echo -e "${cyan} > Restarting PageKite${white}"
+        restart_pagekite
+    fi
+
     echo
     echo -e "${green}Your new Cozy is now deployed."
-    echo -e "If your DNS is correctly set up, it will be accessible at https://$COZY in a few second.${white}"
+    echo -e "If your DNS is properly set up, it will be accessible at https://$COZY in a few second.${white}"
     echo
     ;;
 
@@ -217,8 +279,8 @@ EOF
         echo -e "$INVALID_COZY_MSG" 1>&2
         exit 1
     fi
-
-    read -p "${red}/!\ You are about to remove $COZY, its data and its configuration.${white} Are you sure? [N/y]" -n 1 -r
+    echo
+    read -e -p "/!\ You are about to remove $COZY, its data and its configuration. Are you sure? [N/y] " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -f /etc/cozy-deploy/vhosts/$COZY
@@ -226,8 +288,13 @@ EOF
         rm -rf /var/cozy-deploy/databases/$COZY
         rm -rf /var/cozy-deploy/configurations/$COZY
         rm -rf /var/cozy-deploy/apps/$COZY
+        if [[ $PAGEKITE = "true" ]]; then
+            sed -i "/http:$COZY/d" ~/.pagekite.rc
+            restart_pagekite
+        fi
         docker kill $COZY || echo "No container to stop" 1>&2
         docker rm $COZY || echo "No container to remove" 1>&2
+
         echo -e "${green}$COZY successfully removed${white}"
     fi
     ;;
@@ -246,12 +313,19 @@ EOF
 
 
   status)
-    if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
+    if [ -z "$COZY" ]; then
+        for COZY in $(cozy-deploy list-domains)
+        do
+            cozy-deploy status $COZY
+        done
+    elif [ "$COZY_EXISTS" == "false" ]; then
         echo -e "$INVALID_COZY_MSG" 1>&2
         exit 1
     fi
 
+    echo -e "${cyan}$COZY${white}"
     docker exec $COZY cozy-monitor status
+    echo
     ;;
 
 
@@ -268,7 +342,7 @@ EOF
 
 
   list)
-    printf "%20s    %7s    %5s\n" "DOMAIN" "RUNNING" "PORT"
+    printf "%35s    %7s    %5s\n" "DOMAIN" "RUNNING" "PORT"
     for NAME in $(cozy-deploy list-domains)
     do
         RUNNING=$(docker inspect --format '{{.State.Running}}' $NAME)
@@ -277,9 +351,9 @@ EOF
              | sed 's/...$//' \
              | sed 's/HostIp://')
         if [ "$RUNNING" == "true" ]; then
-            printf "%20s    ${green}%7s${white}    %5s\n" "$NAME" "$RUNNING" "$PORT"
+            printf "%35s    ${green}%7s${white}    %5s\n" "$NAME" "$RUNNING" "$PORT"
         else
-            printf "%20s    ${red}%7s${white}    %5s\n" "$NAME" "$RUNNING" "$PORT"
+            printf "%35s    ${red}%7s${white}    %5s\n" "$NAME" "$RUNNING" "$PORT"
         fi
     done
     ;;
@@ -329,6 +403,7 @@ EOF
     cat<<EOF
     help                          Print the list of commands
     init                          Initialize Nginx proxy configuration in /etc/nginx/conf.d/cozy-deploy.conf
+    pagekite-init                 Initialize PageKite configuration in /root/.pagekite.rc
     pull                          Fetch the latest cozy/full official image from Docker Hub
     build                         Build a cozy/full image manually from the GitHub repository https://github.com/cozy-labs/cozy-docker
     update-image                  Update cozy-deploy and the base image

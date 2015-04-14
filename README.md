@@ -70,8 +70,8 @@ Usage: cozy-deploy COMMAND [domain]
 
 Options:
     help                          Print the list of commands
-    commands                      Print the list of commands
     init                          Initialize Nginx proxy configuration in /etc/nginx/conf.d/cozy-deploy.conf
+    pagekite-init                 Initialize PageKite configuration in /root/.pagekite.rc
     pull                          Fetch the latest cozy/full official image from Docker Hub
     build                         Build a cozy/full image manually from the GitHub repository https://github.com/cozy-labs/cozy-docker
     update-image                  Update cozy-deploy and the base image
@@ -91,6 +91,25 @@ Options:
     update  <domain>              Launch application updates on a Cozy
     upgrade <domain>              Launch a system upgrade on a Cozy
 ```
+
+
+## PageKite
+
+Cozy Deploy provides a [PageKite](https://pagekite.net) seemless integration.    
+Subscribe to a PageKite account, [get your Kite Secret](https://pagekite.net/home/#show_account_details), and save your settings on your host:
+
+```bash
+cozy-deploy pagekite-init
+```
+
+Then you will be able to deploy containers accessible to the Internet without having to deal with DNS or port opening.    
+Just indicate a new PageKite domain (like `xxx-myaccount.pagekite.me`) and follow the instructions:
+
+```bash
+cozy-deploy deploy xxx-myaccount.pagekite.me
+```
+
+**Note**: Using `xxx-myaccount.pagekite.me` will deploy an HTTPS-ready container, and `xxx.myaccount.pagekite.me` will deploy an HTTP one.
 
 
 ## SSL certificates
@@ -123,7 +142,6 @@ Cozies are running on high ports (>`49000`). Make sure that you close them and l
 
 * Backup/restore
 * Snapshot (via docker commit and tags)
-* Pagekite?
 
 
 ## What is Cozy?
@@ -143,5 +161,5 @@ You can reach the Cozy Community by:
 
 * Chatting with us on IRC #cozycloud on irc.freenode.net
 * Posting on our [Forum](https://forum.cozy.io)
-* Posting issues on the [Github repos](https://github.com/mycozycloud/)
+* Posting issues on the [Github repos](https://github.com/cozy/)
 * Mentioning us on [Twitter](http://twitter.com/mycozycloud)
