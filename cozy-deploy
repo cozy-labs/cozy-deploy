@@ -21,9 +21,23 @@ else
 fi
 
 
+# Helpers to display messages
+alert () {
+    echo -e "${red}$@${white}" 1>&2
+}
+
+success () {
+    echo -e "${green}$@${white}"
+}
+
+notice () {
+    echo -e "${cyan}$@${white}"
+}
+
+
 # Ensure that the script is running as superuser
 if [ "$(id -u)" != "0" ]; then
-   echo -e "${red}This script must be run as root${white}" 1>&2
+   alert "This script must be run as root"
    exit 1
 fi
 
@@ -32,7 +46,7 @@ fi
 if [ ! -z "$2" ]; then
     COZY=$2
     if [[ ! $COZY =~ ^.*\.[a-zA-Z]{2,}$ ]]; then
-        echo -e "${red}You must provide a valid domain name (e.g. $(basename $0) $1 mycozy.org)${white}" 1>&2
+        alert "You must provide a valid domain name (e.g. $(basename $0) $1 mycozy.org)"
         exit 1
     fi
 
@@ -45,7 +59,8 @@ if [ ! -z "$2" ]; then
     set -e
 fi
 
-INVALID_COZY_MSG="${red}You must provide a Cozy domain name (e.g. $(basename $0) $1 mycozy.org)${white}"
+
+INVALID_COZY_MSG="You must provide a Cozy domain name (e.g. $(basename $0) $1 mycozy.org)"
 
 
 # Check if pagekite is configured
@@ -73,7 +88,7 @@ case "$1" in
 
 
   build)
-    echo -e "${cyan}Building image from the official repository: https://github.com/cozy-labs/cozy-docker${white}"
+    notice "Building image from the official repository: https://github.com/cozy-labs/cozy-docker"
     docker build -t cozy/full github.com/cozy-labs/cozy-docker
     ;;
 
@@ -97,14 +112,14 @@ case "$1" in
 
     # Configure /root/.pagekite.rc
     if [ "$PAGEKITE" == "true" ]; then
-        echo -e "${red}PageKite is already configured, delete ~/.pagekite.rc if you want to be able to configure it again${white}" 1>&2
+        alert "PageKite is already configured, delete ~/.pagekite.rc if you want to be able to configure it again"
         exit 1
     fi
-    echo -e "${cyan}You are about to configure PageKite, a service that enables you to open your Cozies to the Internet easily."
-    echo -e "You need to register on https://pagekite.net/signup/ first, then find your Kite Secret on https://pagekite.net/home/?#show_account_details."
-    echo
-    echo -e "Please indicate those details below.${white}"
-    echo
+    notice "You are about to configure PageKite, a service that enables you to open your Cozies to the Internet easily.
+You need to register on https://pagekite.net/signup/ first, then find your Kite Secret on https://pagekite.net/home/?#show_account_details.
+
+Please indicate those details below.
+"
     read -e -p "Your Kite (xxxx.pagekite.me): " ACCOUNT
     read -e -p "Your Kite Secret (e.g. 89d49k4zck26x7b427k8x79a9bd3ex9a): " SECRET
     cat <<EOF > /root/.pagekite.rc
@@ -114,37 +129,37 @@ defaults
 savefile = /root/.pagekite.rc
 EOF
 
-    echo
-    echo -e "${green}Your PageKite account has been properly configured."
-    echo -e "Try deploying a Cozy on cozy-$ACCOUNT :-)"
-    echo
-    echo -e "Pro tip: xxx-$ACCOUNT will be deployed in HTTPS"
-    echo -e "         xxx.$ACCOUNT will be deployed in HTTP${white}"
+    success "
+Your PageKite account has been properly configured.
+Try deploying a Cozy on cozy-$ACCOUNT :-)
+
+Pro tip: xxx-$ACCOUNT will be deployed in HTTPS
+         xxx.$ACCOUNT will be deployed in HTTP"
     ;;
 
 
   update-image)
-    echo -e "${cyan}Updating cozy base image: cozy/full${white}"
+    notice "Updating cozy base image: cozy/full"
     docker pull cozy/full
-    echo -e "${cyan}Updating cozy-deploy executable${white}"
+    notice "Updating cozy-deploy executable"
     wget -qO- https://raw.github.com/cozy-labs/cozy-deploy/master/cozy-deploy > $(readlink -f $0)
     ;;
 
 
   update)
     if [ -z "$COZY" ]; then
-        echo -e "$INVALID_COZY_MSG" 1>&2
+        alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
-    echo -e "${cyan}Updating system and applications on $COZY${white}"
+    notice "Updating system and applications on $COZY"
     docker exec $COZY cozy-monitor update-cozy-stack
     docker exec $COZY cozy-monitor update-all
     ;;
 
 
   update-all)
-    echo -e "${cyan}Updating applications on all the Cozies...${white}"
+    notice "Updating applications on all the Cozies..."
     sleep 3
     for CID in $(cozy-deploy list-domains)
     do
@@ -156,18 +171,18 @@ EOF
 
   upgrade)
     if [ -z "$COZY" ]; then
-        echo -e "$INVALID_COZY_MSG" 1>&2
+        alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
-    echo -e "${cyan}Upgrading system on $COZY${white}"
+    notice "Upgrading system on $COZY"
     docker exec $COZY apt-get update --quiet
     docker exec $COZY apt-get upgrade --quiet -yy
     ;;
 
 
   upgrade-all)
-    echo -e "${cyan}Upgrading the Cozies' systems${white}"
+    notice "Upgrading the Cozies' systems"
     sleep 3
     for CID in $(cozy-deploy list-domains)
     do
@@ -179,18 +194,18 @@ EOF
 
   deploy)
     if [ -z "$COZY" ]; then
-        echo -e "$INVALID_COZY_MSG" 1>&2
+        alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
     # Find a new port
-    echo -e "${cyan} > Finding a free port${white}"
+    notice " > Finding a free port"
     LAST_PORT=$(cat /etc/cozy-deploy/last-port-used)
     PORT=$((LAST_PORT+1))
     echo "$PORT" > /etc/cozy-deploy/last-port-used
 
     # Generate an SSL certificate
-    echo -e "${cyan} > Generating the self-signed SSL certificate${white}"
+    notice " > Generating the self-signed SSL certificate"
     openssl req -x509 -nodes -newkey rsa:2048 \
                  -keyout /etc/cozy-deploy/ssl/$COZY.key \
                  -out /etc/cozy-deploy/ssl/$COZY.crt \
@@ -199,7 +214,7 @@ EOF
     chmod 600 /etc/cozy-deploy/ssl/$COZY.key
 
     # Write the VHost configuration
-    echo -e "${cyan} > Writing Nginx configuration${white}"
+    notice " > Writing Nginx configuration"
     cat <<EOF > /etc/cozy-deploy/vhosts/$COZY
 server {
     listen 443;
@@ -242,14 +257,14 @@ EOF
     service nginx reload
 
     # Fetch couchdb UID and create the shared volume
-    echo -e "${cyan} > Creating shared volumes${white}"
+    notice " > Creating shared volumes"
     COUCHDB_ID=$(docker run --rm=true cozy/full id -u couchdb)
     mkdir -p /var/cozy-deploy/databases/$COZY
     chown $COUCHDB_ID -hR /var/cozy-deploy/databases/$COZY
 
     # Run the container
     echo
-    echo -e "${cyan} > Running the container:${white}"
+    notice " > Running the container:"
     docker run -d \
                -p $PORT:80 \
                -e "DISABLE_SSL=true" \
@@ -264,21 +279,21 @@ EOF
     if [[ $COZY =~ ^.*\.pagekite\.me$ ]] && [[ $PAGEKITE = "true" ]]; then
         pagekite.py --add $PORT $COZY
         echo
-        echo -e "${cyan} > Restarting PageKite${white}"
+        notice "  > Restarting PageKite"
         restart_pagekite
     fi
 
     sleep 5
-    echo
-    echo -e "${green}Your new Cozy is now deployed."
-    echo -e "If your DNS is properly set up, it will be accessible at https://$COZY in a few second.${white}"
-    echo
+    success "
+Your new Cozy is now deployed.
+If your DNS is properly set up, it will be accessible at https://$COZY in a few second.
+"
     ;;
 
 
   remove)
     if [ -z "$COZY" ]; then
-        echo -e "$INVALID_COZY_MSG" 1>&2
+        alert "$INVALID_COZY_MSG"
         exit 1
     fi
     echo
@@ -297,18 +312,18 @@ EOF
         docker kill $COZY > /dev/null || echo "No container to stop" 1>&2
         docker rm $COZY > /dev/null || echo "No container to remove" 1>&2
 
-        echo -e "${green}$COZY successfully removed${white}"
+        success "$COZY successfully removed"
     fi
     ;;
 
 
   enter)
     if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
-        echo -e "$INVALID_COZY_MSG" 1>&2
+        alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
-    echo -e "${cyan}Opening a shell in $COZY...${white}"
+    notice "Opening a shell in $COZY..."
     sleep 1
     docker exec -ti $COZY bash
     ;;
@@ -321,11 +336,11 @@ EOF
             cozy-deploy status $COZY
         done
     elif [ "$COZY_EXISTS" == "false" ]; then
-        echo -e "$INVALID_COZY_MSG" 1>&2
+        alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
-    echo -e "${cyan}$COZY${white}"
+    notice "$COZY"
     docker exec $COZY cozy-monitor status
     echo
     ;;
@@ -333,7 +348,7 @@ EOF
 
   logs)
     if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
-        echo -e "$INVALID_COZY_MSG" 1>&2
+        alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
@@ -372,7 +387,7 @@ EOF
 
 
   start-all)
-    echo -e "${cyan}Starting all the Cozies${white}"
+    notice "Starting all the Cozies"
     docker ps -a \
               --filter "image=cozy/*" \
               --filter "name=.*\..*" \
