@@ -1,4 +1,4 @@
-# Cozy Deploy
+# [Cozy](https://cozy.io) Deploy
 
 Deploy, manage and monitor multiple Cozies. Docker powered.
 
@@ -32,7 +32,7 @@ apt-get install lxc-docker
 wget -qO- https://raw.github.com/cozy-labs/cozy-deploy/master/cozy-deploy > /usr/local/bin/cozy-deploy
 
 # Copy bash_completion
-https://raw.github.com/cozy-labs/cozy-deploy/master/bash_completion > /etc/bash_completion.d/cozy-deploy
+wget -qO- https://raw.github.com/cozy-labs/cozy-deploy/master/bash_completion > /etc/bash_completion.d/cozy-deploy
 
 # Initialize Nginx configuration
 cozy-deploy init
@@ -135,7 +135,7 @@ It will update the `cozy-deploy` executable and pull the latest version of the D
 
 ## Hack
 
-Just edit `/usr/local/bin/cozy-deploy` and you are good to go !
+Just edit `/usr/local/bin/cozy-deploy` and you are good to go!
 
 
 ## Security

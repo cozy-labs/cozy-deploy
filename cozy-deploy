@@ -80,7 +80,7 @@ case "$1" in
 
   init)
     mkdir -p /etc/cozy-deploy/{ssl,vhosts}
-    mkdir -p /var/cozy-deploy/{databases,configurations,backups,apps}
+    mkdir -p /var/cozy-deploy/{databases,configurations,backups,apps,modules}
     chmod -R 600 /var/cozy-deploy/configurations
     chmod -R 600 /var/cozy-deploy/configurations
     echo "49001" > /etc/cozy-deploy/last-port-used
@@ -243,7 +243,7 @@ EOF
 
     # Fetch couchdb UID and create the shared volume
     echo -e "${cyan} > Creating shared volumes${white}"
-    COUCHDB_ID=$(docker run cozy/full id -u couchdb)
+    COUCHDB_ID=$(docker run --rm=true cozy/full id -u couchdb)
     mkdir -p /var/cozy-deploy/databases/$COZY
     chown $COUCHDB_ID -hR /var/cozy-deploy/databases/$COZY
 
@@ -255,7 +255,8 @@ EOF
                -e "DISABLE_SSL=true" \
                -v /var/cozy-deploy/databases/$COZY:/var/lib/couchdb \
                -v /var/cozy-deploy/configurations/$COZY:/etc/cozy \
-               -v /var/cozy-deploy/apps/$COZY:/usr/local/cozy \
+               -v /var/cozy-deploy/apps/$COZY:/usr/local/cozy/apps \
+               -v /var/cozy-deploy/modules:/usr/local/lib/node_shared_modules \
                --name $COZY \
                cozy/full 2>&1
 
@@ -293,8 +294,8 @@ EOF
             sed -i "/http:$COZY/d" ~/.pagekite.rc
             restart_pagekite
         fi
-        docker kill $COZY || echo "No container to stop" 1>&2
-        docker rm $COZY || echo "No container to remove" 1>&2
+        docker kill $COZY > /dev/null || echo "No container to stop" 1>&2
+        docker rm $COZY > /dev/null || echo "No container to remove" 1>&2
 
         echo -e "${green}$COZY successfully removed${white}"
     fi
@@ -336,9 +337,9 @@ EOF
         exit 1
     fi
 
-    docker exec $COZY bash -c "tail -n 30 /usr/local/var/log/cozy/*.log"
+    docker exec $COZY bash -c "tail -f /usr/local/var/log/cozy/*.log"
     echo
-    docker exec $COZY bash -c "tail -n 30 /var/log/supervisor/*-stdout*.log"
+    docker exec $COZY bash -c "tail -f /var/log/supervisor/*-stdout*.log"
     ;;
 
 
@@ -364,7 +365,7 @@ EOF
     docker ps -a -q \
               --filter "image=cozy/*" \
               --filter "name=.*\..*" \
-    | xargs docker inspect --format '{{.Name}}' \
+    | xargs docker inspect --format '{{.Name}}' 2> /dev/null \
     | sed 's/^.//' \
     || echo ""
     ;;
