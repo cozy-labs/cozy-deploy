@@ -99,9 +99,11 @@ case "$1" in
     chmod -R 600 /var/cozy-deploy/configurations
     chmod -R 600 /var/cozy-deploy/configurations
     echo "49001" > /etc/cozy-deploy/last-port-used
+    mkdir -p /etc/nginx/conf.d
     echo "include /etc/cozy-deploy/vhosts/*;" > /etc/nginx/conf.d/cozy-deploy.conf
     openssl dhparam -out /etc/cozy-deploy/ssl/dh2048.pem -outform PEM -2 2048
-    service nginx restart
+    service nginx restart 2>/dev/null \
+    || alert "Please restart nginx manually"
     ;;
 
 
@@ -254,7 +256,8 @@ server {
 }
 EOF
     # Reload Nginx (restart is not needed)
-    service nginx reload
+    service nginx reload 2>/dev/null \
+    || alert "Please reload nginx manually"
 
     # Fetch couchdb UID and create the shared volume
     notice " > Creating shared volumes"
@@ -277,9 +280,13 @@ EOF
 
     # Add a PageKite Host
     if [[ $COZY =~ ^.*\.pagekite\.me$ ]] && [[ $PAGEKITE = "true" ]]; then
-        pagekite.py --add $PORT $COZY
+
+        # Hide PageKite CLI and answer "Yes" automatically
+        pagekite.py --add $PORT $COZY >/dev/null <<-EOF
+Y
+EOF
         echo
-        notice "  > Restarting PageKite"
+        notice " > Restarting PageKite"
         restart_pagekite
     fi
 
@@ -311,6 +318,11 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
         fi
         docker kill $COZY > /dev/null || echo "No container to stop" 1>&2
         docker rm $COZY > /dev/null || echo "No container to remove" 1>&2
+
+        # Reload Nginx (restart is not needed)
+        service nginx reload 2>/dev/null \
+        || alert "Please reload nginx manually"
+        echo
 
         success "$COZY successfully removed"
     fi
