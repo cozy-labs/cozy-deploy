@@ -22,22 +22,22 @@ fi
 
 
 # Helpers to display messages
-alert () {
+_alert () {
     echo -e "${red}$@${white}" 1>&2
 }
 
-success () {
+_success () {
     echo -e "${green}$@${white}"
 }
 
-notice () {
+_notice () {
     echo -e "${cyan}$@${white}"
 }
 
 
 # Ensure that the script is running as superuser
 if [ "$(id -u)" != "0" ]; then
-   alert "This script must be run as root"
+   _alert "This script must be run as root"
    exit 1
 fi
 
@@ -46,7 +46,7 @@ fi
 if [ ! -z "$2" ]; then
     COZY=$2
     if [[ ! $COZY =~ ^.*\.[a-zA-Z]{2,}$ ]]; then
-        alert "You must provide a valid domain name (e.g. $(basename $0) $1 mycozy.org)"
+        _alert "You must provide a valid domain name (e.g. $(basename $0) $1 mycozy.org)"
         exit 1
     fi
 
@@ -70,16 +70,6 @@ else
     PAGEKITE=false
 fi
 
-# Helper to restart pagekite.py
-restart_pagekite () {
-    if [[ $PAGEKITE = "true" ]]; then
-        if [ "$(pgrep pagekite.py)" ]; then
-            killall pagekite.py
-        fi
-        pagekite.py --daemonize
-    fi
-}
-
 
 case "$1" in
   pull)
@@ -88,7 +78,7 @@ case "$1" in
 
 
   build)
-    notice "Building image from the official repository: https://github.com/cozy-labs/cozy-docker"
+    _notice "Building image from the official repository: https://github.com/cozy-labs/cozy-docker"
     docker build -t cozy/full github.com/cozy-labs/cozy-docker
     ;;
 
@@ -103,21 +93,21 @@ case "$1" in
     echo "include /etc/cozy-deploy/vhosts/*;" > /etc/nginx/conf.d/cozy-deploy.conf
     openssl dhparam -out /etc/cozy-deploy/ssl/dh2048.pem -outform PEM -2 2048
     service nginx restart 2>/dev/null \
-    || alert "Please restart nginx manually"
+    || _alert "Please restart nginx manually"
     ;;
 
 
-  pagekite-init)
+    init-pagekite)
     # Download PageKite executable
     wget -qO- https://pagekite.net/pk/pagekite.py > /usr/local/bin/pagekite.py
     chmod +x /usr/local/bin/pagekite.py
 
     # Configure /root/.pagekite.rc
     if [ "$PAGEKITE" == "true" ]; then
-        alert "PageKite is already configured, delete ~/.pagekite.rc if you want to be able to configure it again"
+        _alert "PageKite is already configured, delete ~/.pagekite.rc if you want to be able to configure it again"
         exit 1
     fi
-    notice "You are about to configure PageKite, a service that enables you to open your Cozies to the Internet easily.
+    _notice "You are about to configure PageKite, a service that enables you to open your Cozies to the Internet easily.
 You need to register on https://pagekite.net/signup/ first, then find your Kite Secret on https://pagekite.net/home/?#show_account_details.
 
 Please indicate those details below.
@@ -131,7 +121,7 @@ defaults
 savefile = /root/.pagekite.rc
 EOF
 
-    success "
+    _success "
 Your PageKite account has been properly configured.
 Try deploying a Cozy on cozy-$ACCOUNT :-)
 
@@ -140,28 +130,41 @@ Pro tip: xxx-$ACCOUNT will be deployed in HTTPS
     ;;
 
 
+  restart-pagekite)
+    if [[ $PAGEKITE = "true" ]]; then
+        _notice "Restarting PageKite..."
+        if [ "$(pgrep pagekite.py)" ]; then
+            killall pagekite.py
+        fi
+        pagekite.py --daemonize
+    else
+        _alert "PageKite is not configured yet. Please run 'cozy-deploy init-pagekite' first."
+    fi
+    ;;
+
+
   update-image)
-    notice "Updating cozy base image: cozy/full"
+    _notice "Updating cozy base image: cozy/full"
     docker pull cozy/full
-    notice "Updating cozy-deploy executable"
+    _notice "Updating cozy-deploy executable"
     wget -qO- https://raw.github.com/cozy-labs/cozy-deploy/master/cozy-deploy > $(readlink -f $0)
     ;;
 
 
   update)
     if [ -z "$COZY" ]; then
-        alert "$INVALID_COZY_MSG"
+        _alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
-    notice "Updating system and applications on $COZY"
+    _notice "Updating system and applications on $COZY"
     docker exec $COZY cozy-monitor update-cozy-stack
     docker exec $COZY cozy-monitor update-all
     ;;
 
 
   update-all)
-    notice "Updating applications on all the Cozies..."
+    _notice "Updating applications on all the Cozies..."
     sleep 3
     for CID in $(cozy-deploy list-domains)
     do
@@ -173,18 +176,18 @@ Pro tip: xxx-$ACCOUNT will be deployed in HTTPS
 
   upgrade)
     if [ -z "$COZY" ]; then
-        alert "$INVALID_COZY_MSG"
+        _alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
-    notice "Upgrading system on $COZY"
+    _notice "Upgrading system on $COZY"
     docker exec $COZY apt-get update --quiet
     docker exec $COZY apt-get upgrade --quiet -yy
     ;;
 
 
   upgrade-all)
-    notice "Upgrading the Cozies' systems"
+    _notice "Upgrading the Cozies' systems"
     sleep 3
     for CID in $(cozy-deploy list-domains)
     do
@@ -194,20 +197,20 @@ Pro tip: xxx-$ACCOUNT will be deployed in HTTPS
     ;;
 
 
-  deploy)
+  deploy|deploy-dev)
     if [ -z "$COZY" ]; then
-        alert "$INVALID_COZY_MSG"
+        _alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
     # Find a new port
-    notice " > Finding a free port"
-    LAST_PORT=$(cat /etc/cozy-deploy/last-port-used)
+    _notice " > Finding a free port"
+    LAST_PORT=$(cat /etc/cozy-deploy/last-port-used 2>/dev/null || echo 49000)
     PORT=$((LAST_PORT+1))
     echo "$PORT" > /etc/cozy-deploy/last-port-used
 
     # Generate an SSL certificate
-    notice " > Generating the self-signed SSL certificate"
+    _notice " > Generating the self-signed SSL certificate"
     openssl req -x509 -nodes -newkey rsa:2048 \
                  -keyout /etc/cozy-deploy/ssl/$COZY.key \
                  -out /etc/cozy-deploy/ssl/$COZY.crt \
@@ -216,7 +219,7 @@ Pro tip: xxx-$ACCOUNT will be deployed in HTTPS
     chmod 600 /etc/cozy-deploy/ssl/$COZY.key
 
     # Write the VHost configuration
-    notice " > Writing Nginx configuration"
+    _notice " > Writing Nginx configuration"
     cat <<EOF > /etc/cozy-deploy/vhosts/$COZY
 server {
     listen 443;
@@ -257,20 +260,34 @@ server {
 EOF
     # Reload Nginx (restart is not needed)
     service nginx reload 2>/dev/null \
-    || alert "Please reload nginx manually"
+    || _alert "Please reload nginx manually"
 
     # Fetch couchdb UID and create the shared volume
-    notice " > Creating shared volumes"
+    _notice " > Creating shared volumes"
     COUCHDB_ID=$(docker run --rm=true cozy/full id -u couchdb)
     mkdir -p /var/cozy-deploy/databases/$COZY
     chown $COUCHDB_ID -hR /var/cozy-deploy/databases/$COZY
 
+    # Deploy in development mode?
+    if [ "$1" == "deploy-dev" ]; then
+        DEV_MODE="-e NODE_ENV=development"
+        PORT_COUCHDB="-p 5984:5984"
+        PORT_CONTROLLER="-p 9002:9002"
+        PORT_DS="-p 9101:9101"
+        PORT_INDEXER="-p 9102:9102"
+        PORT_HOME="-p 9103:9103"
+        PORT_PROXY="-p 9104:9104"
+        PORT_AXON="-p 9105:9105"
+    fi
+
     # Run the container
     echo
-    notice " > Running the container:"
+    _notice " > Running the container:"
+    set -x
     docker run -d \
                -p $PORT:80 \
-               -e "DISABLE_SSL=true" \
+               $PORT_COUCHDB $PORT_CONTROLLER $PORT_DS $PORT_INDEXER $PORT_HOME $PORT_PROXY $PORT_AXON \
+               -e DISABLE_SSL=true $DEV_MODE \
                -v /var/cozy-deploy/databases/$COZY:/var/lib/couchdb \
                -v /var/cozy-deploy/configurations/$COZY:/etc/cozy \
                -v /var/cozy-deploy/apps/$COZY:/usr/local/cozy/apps \
@@ -286,21 +303,24 @@ EOF
 Y
 EOF
         echo
-        notice " > Restarting PageKite"
-        restart_pagekite
+        _notice " > Restarting PageKite"
+        cozy-deploy restart-pagekite > /dev/null
     fi
 
-    sleep 5
-    success "
+    _notice " > Waiting for your Cozy to be up and running..."
+    sleep 10
+    while ! cozy-deploy status $COZY > /dev/null 2>&1 ; do sleep 5; done
+
+    _success "
 Your new Cozy is now deployed.
 If your DNS is properly set up, it will be accessible at https://$COZY in a few second.
 "
     ;;
 
 
-  remove)
+  remove|rm)
     if [ -z "$COZY" ]; then
-        alert "$INVALID_COZY_MSG"
+        _alert "$INVALID_COZY_MSG"
         exit 1
     fi
     echo
@@ -309,33 +329,34 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         rm -f /etc/cozy-deploy/vhosts/$COZY
         rm -f /etc/cozy-deploy/ssl/$COZY.{key,crt}
+        rm -f /var/log/nginx/$COZY.log*
         rm -rf /var/cozy-deploy/databases/$COZY
         rm -rf /var/cozy-deploy/configurations/$COZY
         rm -rf /var/cozy-deploy/apps/$COZY
-        if [[ $PAGEKITE = "true" ]]; then
+        if [[ $COZY =~ ^.*\.pagekite\.me$ ]] && [[ $PAGEKITE = "true" ]]; then
             sed -i "/http:$COZY/d" ~/.pagekite.rc
-            restart_pagekite
+            cozy-deploy restart-pagekite
         fi
         docker kill $COZY > /dev/null || echo "No container to stop" 1>&2
         docker rm $COZY > /dev/null || echo "No container to remove" 1>&2
 
         # Reload Nginx (restart is not needed)
         service nginx reload 2>/dev/null \
-        || alert "Please reload nginx manually"
+        || _alert "Please reload nginx manually"
         echo
 
-        success "$COZY successfully removed"
+        _success "$COZY successfully removed"
     fi
     ;;
 
 
   enter)
     if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
-        alert "$INVALID_COZY_MSG"
+        _alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
-    notice "Opening a shell in $COZY..."
+    _notice "Opening a shell in $COZY..."
     sleep 1
     docker exec -ti $COZY bash
     ;;
@@ -348,19 +369,19 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
             cozy-deploy status $COZY
         done
     elif [ "$COZY_EXISTS" == "false" ]; then
-        alert "$INVALID_COZY_MSG"
+        _alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
-    notice "$COZY"
+    _notice "$COZY"
     docker exec $COZY cozy-monitor status
     echo
     ;;
 
 
-  logs)
+  logs|log)
     if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
-        alert "$INVALID_COZY_MSG"
+        _alert "$INVALID_COZY_MSG"
         exit 1
     fi
 
@@ -370,7 +391,7 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
     ;;
 
 
-  list)
+  list|ls)
     printf "%35s    %7s    %5s\n" "DOMAIN" "RUNNING" "PORT"
     for NAME in $(cozy-deploy list-domains)
     do
@@ -399,7 +420,7 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
 
 
   start-all)
-    notice "Starting all the Cozies"
+    _notice "Starting all the Cozies"
     docker ps -a \
               --filter "image=cozy/*" \
               --filter "name=.*\..*" \
@@ -409,7 +430,7 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
     ;;
 
 
-  monitor)
+  monitor|mon)
     if [ -z "$COZY" ] || [ "$COZY_EXISTS" == "false" ]; then
         docker stats $(docker ps -q)
     else
@@ -419,7 +440,7 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
 
 
   commands)
-    cozy-deploy help | awk '{print $1}' | grep -v ':' 
+    cozy-deploy help | awk '{print $1}' | grep -v ':'
     ;;
 
 
@@ -432,7 +453,8 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
     cat<<EOF
     help                          Print the list of commands
     init                          Initialize Nginx proxy configuration in /etc/nginx/conf.d/cozy-deploy.conf
-    pagekite-init                 Initialize PageKite configuration in /root/.pagekite.rc
+    init-pagekite                 Initialize PageKite configuration in /root/.pagekite.rc
+    restart-pagekite              Restart PageKite daemon
     pull                          Fetch the latest cozy/full official image from Docker Hub
     build                         Build a cozy/full image manually from the GitHub repository https://github.com/cozy-labs/cozy-docker
     update-image                  Update cozy-deploy and the base image
@@ -444,13 +466,14 @@ If your DNS is properly set up, it will be accessible at https://$COZY in a few 
     upgrade-all                   Launch a system upgrade on all the Cozies
     monitor                       Monitor resources used by the Cozies or by a specific Cozy
 
-    deploy  <domain>              Deploy a new Cozy container
-    remove  <domain>              Remove a Cozy, its data and its configuration
-    enter   <domain>              Open a shell in the specified Cozy
-    status  <domain>              Show the status of the Cozy's services
-    logs    <domain>              Display the last lines of interesting log files in the specified Cozy
-    update  <domain>              Launch application updates on a Cozy
-    upgrade <domain>              Launch a system upgrade on a Cozy
+    deploy     <domain>           Deploy a new Cozy container
+    deploy-dev <domain>           Deploy a new Cozy container with NODE_ENV=development and all the port forwarded to the host
+    remove     <domain>           Remove a Cozy, its data and its configuration
+    enter      <domain>           Open a shell in the specified Cozy
+    status     <domain>           Show the status of the Cozy's services
+    logs       <domain>           Display the last lines of interesting log files in the specified Cozy
+    update     <domain>           Launch application updates on a Cozy
+    upgrade    <domain>           Launch a system upgrade on a Cozy
 EOF
     ;;
 esac

@@ -63,7 +63,8 @@ Usage: cozy-deploy COMMAND [domain]
 Options:
     help                          Print the list of commands
     init                          Initialize Nginx proxy configuration in /etc/nginx/conf.d/cozy-deploy.conf
-    pagekite-init                 Initialize PageKite configuration in /root/.pagekite.rc
+    init-pagekite                 Initialize PageKite configuration in /root/.pagekite.rc
+    restart-pagekite              Restart PageKite daemon
     pull                          Fetch the latest cozy/full official image from Docker Hub
     build                         Build a cozy/full image manually from the GitHub repository https://github.com/cozy-labs/cozy-docker
     update-image                  Update cozy-deploy and the base image
@@ -75,13 +76,14 @@ Options:
     upgrade-all                   Launch a system upgrade on all the Cozies
     monitor                       Monitor resources used by the Cozies or by a specific Cozy
 
-    deploy  <domain>              Deploy a new Cozy container
-    remove  <domain>              Remove a Cozy, its data and its configuration
-    enter   <domain>              Open a shell in the specified Cozy
-    status  <domain>              Show the status of the Cozy's services
-    logs    <domain>              Display the last lines of interesting log files in the specified Cozy
-    update  <domain>              Launch application updates on a Cozy
-    upgrade <domain>              Launch a system upgrade on a Cozy
+    deploy     <domain>           Deploy a new Cozy container
+    deploy-dev <domain>           Deploy a new Cozy container with NODE_ENV=development and all the port forwarded to the host
+    remove     <domain>           Remove a Cozy, its data and its configuration
+    enter      <domain>           Open a shell in the specified Cozy
+    status     <domain>           Show the status of the Cozy's services
+    logs       <domain>           Display the last lines of interesting log files in the specified Cozy
+    update     <domain>           Launch application updates on a Cozy
+    upgrade    <domain>           Launch a system upgrade on a Cozy
 ```
 
 
@@ -91,7 +93,7 @@ Cozy Deploy provides a [PageKite](https://pagekite.net) seemless integration.
 Subscribe to a PageKite account, [get your Kite Secret](https://pagekite.net/home/#show_account_details), and save your settings on your host by running:
 
 ```bash
-cozy-deploy pagekite-init
+cozy-deploy init-pagekite
 ```
 
 Then you will be able to deploy containers accessible to the Internet without having to deal with DNS or port opening.    
@@ -131,6 +133,17 @@ cozy-deploy update-image
 ```
 
 It will update the `cozy-deploy` executable and pull the latest version of the Docker image.
+
+
+## Development mode
+
+If you want to simulate a Cozy installation directly on your host, by forwarding all the interesting automaticaly, run:
+
+```bash
+cozy-deploy deploy-dev my.dev.cozy
+```
+
+You are now able to access your proxy directly: http://localhost:9104 and run your applications seemlessly on your host.
 
 
 ## Hack
