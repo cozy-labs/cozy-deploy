@@ -283,7 +283,6 @@ EOF
     # Run the container
     echo
     _notice " > Running the container:"
-    set -x
     docker run -d \
                -p $PORT:80 \
                $PORT_COUCHDB $PORT_CONTROLLER $PORT_DS $PORT_INDEXER $PORT_HOME $PORT_PROXY $PORT_AXON \
