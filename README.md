@@ -2,6 +2,8 @@
 
 Deploy, manage and monitor multiple Cozies. Docker powered.
 
+** ⚠️ This project is now deprecated. The [Cozy image for Docker](https://github.com/cozy-labs/cozy-docker/) has been updated and may not be compatible anymore with cozy-deploy. **
+
 ![gif](http://kload.fr/cozy-deploy.gif)
 
 ## Requirements
